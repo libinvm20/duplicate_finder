@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Find duplicate files by size and content hash")]
