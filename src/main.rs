@@ -58,29 +58,34 @@ impl Default for DuplicateFinderApp {
 impl eframe::App for DuplicateFinderApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Poll for scan results from background thread
+        let mut pending_msgs: Vec<ScanMsg> = Vec::new();
         if let Some(rx) = &self.scan_rx {
             while let Ok(msg) = rx.try_recv() {
-                match msg {
-                    ScanMsg::Progress(cur, total, msg) => {
-                        self.progress = (cur, total);
-                        self.status = msg;
-                    }
-                    ScanMsg::Done(groups) => {
-                        self.groups = groups;
-                        self.is_scanning = false;
-                        let total_files: usize = self.groups.iter().map(|g| g.files.len()).sum();
-                        self.status = format!(
-                            "Found {} duplicate groups ({} files)",
-                            self.groups.len(),
-                            total_files
-                        );
-                        self.scan_rx = None;
-                    }
-                    ScanMsg::Error(e) => {
-                        self.is_scanning = false;
-                        self.status = format!("Error: {}", e);
-                        self.scan_rx = None;
-                    }
+                pending_msgs.push(msg);
+            }
+        }
+
+        for msg in pending_msgs {
+            match msg {
+                ScanMsg::Progress(cur, total, status_msg) => {
+                    self.progress = (cur, total);
+                    self.status = status_msg;
+                }
+                ScanMsg::Done(groups) => {
+                    self.groups = groups;
+                    self.is_scanning = false;
+                    let total_files: usize = self.groups.iter().map(|g| g.files.len()).sum();
+                    self.status = format!(
+                        "Found {} duplicate groups ({} files)",
+                        self.groups.len(),
+                        total_files
+                    );
+                    self.scan_rx = None;
+                }
+                ScanMsg::Error(e) => {
+                    self.is_scanning = false;
+                    self.status = format!("Error: {}", e);
+                    self.scan_rx = None;
                 }
             }
         }
