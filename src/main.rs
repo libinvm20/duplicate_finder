@@ -27,6 +27,7 @@ struct DuplicateFinderApp {
     folder: Option<PathBuf>,
     min_size: u64,
     ignore_exts: String,
+    images_only: bool,
     dry_run: bool,
 
     groups: Vec<DuplicateGroup>,
@@ -44,6 +45,7 @@ impl Default for DuplicateFinderApp {
             folder: None,
             min_size: 1,
             ignore_exts: "tmp,log".to_string(),
+            images_only: false,
             dry_run: true,
             groups: Vec::new(),
             selected_groups: HashSet::new(),
@@ -120,7 +122,11 @@ impl eframe::App for DuplicateFinderApp {
                 ui.label("Ignore extensions (comma-separated):");
                 ui.text_edit_singleline(&mut self.ignore_exts);
                 ui.checkbox(&mut self.dry_run, "Dry run (preview only, no deletion)");
+                ui.checkbox(&mut self.images_only, "Images only");
             });
+            if self.images_only {
+                ui.label("Scanning images: jpg, jpeg, png, gif, bmp, webp, tiff, tif, svg, ico, heic, raw, arw, cr2, nef, dng");
+            }
 
             ui.separator();
 
@@ -229,6 +235,7 @@ impl DuplicateFinderApp {
             .filter(|s| !s.is_empty())
             .collect();
 
+        let images_only = self.images_only;
         let (tx, rx) = mpsc::channel();
         self.scan_rx = Some(rx);
         self.is_scanning = true;
@@ -239,7 +246,7 @@ impl DuplicateFinderApp {
 
         let tx_err = tx.clone();
         thread::spawn(move || {
-            if let Err(e) = run_scan(folder, min_size, ignore_exts, tx) {
+            if let Err(e) = run_scan(folder, min_size, ignore_exts, images_only, tx) {
                 let _ = tx_err.send(ScanMsg::Error(e.to_string()));
             }
         });
@@ -307,8 +314,16 @@ fn run_scan(
     root: PathBuf,
     min_size: u64,
     ignore_exts: Vec<String>,
+    images_only: bool,
     tx: mpsc::Sender<ScanMsg>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Common image extensions (lowercase, without dots)
+    let image_exts: &[&str] = &[
+        "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif", "svg", "ico",
+        "heic", "heif", "raw", "arw", "cr2", "nef", "dng", "orf", "rw2", "pef",
+        "sr2", "x3f", "3fr", "fff", "mef", "mos", "nrw", "rwl",
+    ];
+
     let _ = tx.send(ScanMsg::Progress(0, 0, "Indexing files...".to_string()));
 
     // Phase 1: collect all files, grouped by size
@@ -328,6 +343,11 @@ fn run_scan(
             .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_default();
         if ignore_exts.contains(&ext) {
+            continue;
+        }
+
+        // If images_only is set, only include common image extensions
+        if images_only && !image_exts.contains(&ext.as_str()) {
             continue;
         }
 
