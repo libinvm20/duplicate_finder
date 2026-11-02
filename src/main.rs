@@ -225,7 +225,7 @@ fn collect_files(root: &Path, min_size: u64, ignore_exts: &[String]) -> Result<V
             .extension()
             .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_default();
-        if ignore_exts.iter().any(|e| e == ext.as_ref()) {
+        if ignore_exts.contains(&ext) {
             continue;
         }
 
