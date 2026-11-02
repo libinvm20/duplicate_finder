@@ -7,6 +7,7 @@ use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
+use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
 struct DuplicateGroup {
@@ -108,7 +109,7 @@ impl eframe::App for DuplicateFinderApp {
                 ui.label("Min size (bytes):");
                 ui.add(
                     egui::DragValue::new(&mut self.min_size)
-                        .range(1..=u64::MAX)
+                        .clamp_range(1..=u64::MAX)
                         .speed(1024),
                 );
                 ui.label("Ignore extensions (comma-separated):");
@@ -131,10 +132,10 @@ impl eframe::App for DuplicateFinderApp {
                 } else {
                     0.0
                 };
-                ui.progress_bar(
-                    pct,
-                    egui::vec2(ui.available_width(), 20.0),
-                    format!("{} / {}", self.progress.0, self.progress.1),
+                ui.add(
+                    egui::ProgressBar::new(pct)
+                        .text(format!("{} / {}", self.progress.0, self.progress.1))
+                        .desired_width(ui.available_width()),
                 );
                 ui.label(&self.status);
             } else {
@@ -175,7 +176,13 @@ impl eframe::App for DuplicateFinderApp {
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (i, group) in self.groups.iter().enumerate() {
-                        egui::Group::new(egui::Id::new(i)).show(ui, |ui| {
+                        egui::CollapsingHeader::new(format!(
+                            "Duplicate group {} ({} bytes, {} files)",
+                            i,
+                            group.size,
+                            group.files.len()
+                        ))
+                        .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 let mut selected = self.selected_groups.contains(&i);
                                 if ui.checkbox(&mut selected, "").changed() {
@@ -225,9 +232,10 @@ impl DuplicateFinderApp {
         self.progress = (0, 0);
         self.status = "Scanning...".to_string();
 
+        let tx_err = tx.clone();
         thread::spawn(move || {
             if let Err(e) = run_scan(folder, min_size, ignore_exts, tx) {
-                let _ = tx.send(ScanMsg::Error(e.to_string()));
+                let _ = tx_err.send(ScanMsg::Error(e.to_string()));
             }
         });
     }
@@ -414,7 +422,7 @@ fn hash_file(path: &Path) -> Result<String, Box<dyn std::error::Error + Send + S
     Ok(format!("{:x}", result))
 }
 
-fn main() -> eframe::Result {
+fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions::default();
     eframe::run_native(
         "Duplicate File Finder",
